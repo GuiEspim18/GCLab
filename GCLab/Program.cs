@@ -2,54 +2,54 @@
 
 class Program
 {
-    // IMPORTANTE: ESTE CÓDIGO CONTÉM PROBLEMAS PROPOSITAIS.
-    // Os alunos devem implementar as correções para chegar ao final com "GC limpo".
     static void Main()
     {
-        Console.WriteLine("=== GCLab - Versão com Problemas ===");
+        Console.WriteLine("=== GCLab - Versão Corrigida ===");
         Console.WriteLine($"GC Server Mode: {System.Runtime.GCSettings.IsServerGC}\n");
 
         var tracker = new IssueTracker();
 
-        // 1) Vazamento por evento não desinscrito
+        // 1) Vazamento por evento resolvido
         var publisher = new Publisher();
-        var subscriber = new LeakySubscriber(publisher);
-        tracker.Track("subscriber", subscriber);
+        using (var subscriber = new LeakySubscriber(publisher))
+        {
+            tracker.Track("subscriber", subscriber);
 
-        // 2) LOH + cache estático sem política de expiração
-        var lohBuffer = BigBufferHolder.Run();
-        tracker.Track("lohBuffer", lohBuffer);
+            // 2) LOH + cache com WeakReference
+            var lohBuffer = BigBufferHolder.Run();
+            tracker.Track("lohBuffer", lohBuffer);
 
-        // 3) Pinned buffer mantido por muito tempo
-        var pinner = new Pinner();
-        var pinned = pinner.PinLongTime();
-        tracker.Track("pinnedBuffer", pinned);
+            // 3) Pinned buffer liberado
+            using (var pinner = new Pinner())
+            {
+                var pinned = pinner.PinLongTime();
+                tracker.Track("pinnedBuffer", pinned);
+            }
 
-        // 4) Concatenação de string ineficiente
-        var payload = ConcatWork.Bad();
-        Console.WriteLine($"Payload length: {payload.Length}");
+            // 4) Concatenação eficiente
+            var payload = ConcatWork.Fixed();
+            Console.WriteLine($"Payload length: {payload.Length}");
 
-        // 5) Recurso externo sem Dispose (usar finalizer como 'rede de segurança')
-        var logger = new Logger("log.txt");
-        logger.WriteLines(10);
-        tracker.Track("logger", logger);
+            // 5) Logger com Dispose
+            using (var logger = new Logger("log.txt"))
+            {
+                logger.WriteLines(10);
+                tracker.Track("logger", logger);
+            }
 
-        // Dispara evento para "usar" o subscriber
-        publisher.Raise();
+            // Dispara evento
+            publisher.Raise();
+        }
 
-        // Remover referências locais (mas problemas permanecem)
-        subscriber = null;
+        // Remove referências locais
         publisher = null;
-        pinned = null;
-        logger = null;
-        lohBuffer = null;
 
-        // Força coletas e verifica sobreviventes
+        // Coleta completa
         GCHelpers.FullCollect();
         tracker.Report();
 
         Console.WriteLine(tracker.HasSurvivors
-            ? "\n❌ Existem sobreviventes indesejados. Sua missão: corrigir o código e rodar novamente."
+            ? "\n❌ Existem sobreviventes indesejados."
             : "\n✅ GC limpo: nenhuma referência indesejada permaneceu viva.");
     }
 }
